@@ -1,0 +1,321 @@
+{% extends 'dashboard.html' %}
+
+{% block content %}
+<div class="container p-4">
+  <!-- YouTube Scraper Section -->
+  <hr class="my-4">
+  <div class="d-flex justify-content-between mb-3">
+    <h3>YouTube Scraper (Halal Check)</h3>
+    <div>
+      <button id="run-btn" class="btn btn-primary">Run Now</button>
+      <div class="form-check form-switch d-inline-block ms-2">
+        <input class="form-check-input" type="checkbox" id="auto-switch">
+        <label class="form-check-label" for="auto-switch">Auto Run</label>
+      </div>
+      <label class="ms-3">Interval (minutes): <input type="number" id="interval-input" value="10" min="1" style="width:80px"></label>
+      <a id="download-csv" class="btn btn-outline-success ms-2" href="#" download="scraper_results.csv" style="display:none;">Download CSV</a>
+    </div>
+  </div>
+
+  <div class="mb-2">Next scheduled run: <span id="next-run">N/A</span></div>
+
+  <div id="results-area">
+    <p class="text-muted">No results yet.</p>
+  </div>
+
+  <!-- Manual Ticker Lookup Section -->
+  <hr class="my-4">
+  <div class="card p-4" id="manual-ticker-card">
+    <h4 class="mb-3">Manual Ticker Lookup</h4>
+    <p class="text-muted mb-3">Enter stock tickers separated by comma (e.g., AAPL, MSFT, TSLA) or provide a YouTube URL to auto-extract tickers.</p>
+    
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label for="manual-ticker-input" class="form-label">Stock Tickers (Optional)</label>
+        <input 
+          type="text" 
+          class="form-control" 
+          id="manual-ticker-input" 
+          placeholder="e.g., AAPL,MSFT,TSLA (comma-separated)"
+          maxlength="200"
+        >
+        <small class="text-muted">Leave empty to auto-extract from YouTube URL</small>
+      </div>
+      
+      <div class="col-md-6">
+        <label for="youtube-url-input" class="form-label">YouTube URL (Optional)</label>
+        <input 
+          type="url" 
+          class="form-control" 
+          id="youtube-url-input" 
+          placeholder="e.g., https://www.youtube.com/watch?v=..."
+        >
+        <small class="text-muted">Used to extract tickers if not provided above</small>
+      </div>
+    </div>
+    
+    <div class="mt-3">
+      <button id="ticker-lookup-btn" class="btn btn-success">Lookup Tickers</button>
+      <a id="manual-ticker-csv-download" class="btn btn-outline-info ms-2" href="#" download="manual_ticker_results.csv" style="display:none;">Download CSV</a>
+      <span id="ticker-loading" class="ms-2" style="display:none;">
+        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        <small class="ms-2">Loading...</small>
+      </span>
+    </div>
+
+    <div id="ticker-results-area" class="mt-4" style="display:none;">
+      <div id="ticker-result-content"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+async function runScraper(){
+  document.getElementById('run-btn').disabled = true;
+  const res = await fetch('/api/tools/scraper/run', {method: 'POST'});
+  const data = await res.json();
+  document.getElementById('run-btn').disabled = false;
+  if(data.error){
+    document.getElementById('results-area').innerHTML = '<div class="alert alert-danger">'+data.error+'</div>';
+    return;
+  }
+  const results = data.results || [];
+  if(results.length === 0){
+    document.getElementById('results-area').innerHTML = '<p class="text-muted">No recent videos or symbols found.</p>';
+    return;
+  }
+  // build table
+  let html = '<div class="table-responsive"><table class="table table-striped"><thead><tr>';
+  const keys = Object.keys(results[0]);
+  for(const k of keys) html += `<th>${k}</th>`;
+  html += '</tr></thead><tbody>';
+  for(const r of results){
+    html += '<tr>';
+    for(const k of keys){
+      html += `<td>${r[k] ?? ''}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table></div>';
+  document.getElementById('results-area').innerHTML = html;
+
+  // setup CSV download link (server-side file endpoint)
+  const a = document.getElementById('download-csv');
+  a.href = '/api/tools/scraper/csv';
+  a.style.display = 'inline-block';
+}
+
+document.getElementById('run-btn').addEventListener('click', runScraper);
+
+// Auto switch - handle visibility toggle and start/stop polling
+document.getElementById('auto-switch').addEventListener('change', async function(e){
+  const enable = e.target.checked;
+  const interval = document.getElementById('interval-input').value || 10;
+  
+  // Hide/show manual ticker lookup
+  updateManualTickerVisibility();
+  
+  // Handle polling
+  if(enable) {
+    startPolling();
+  } else {
+    stopPolling();
+  }
+  
+  // Update server
+  await fetch('/api/tools/scraper/auto?enable='+enable+'&interval_minutes='+interval, {method:'POST'});
+  updateStatus();
+});
+
+// update status and next run display
+async function updateStatus(){
+  const res = await fetch('/api/tools/scraper/status');
+  const data = await res.json();
+  document.getElementById('interval-input').value = data.interval_minutes || 10;
+  document.getElementById('auto-switch').checked = data.auto_run_enabled || false;
+  document.getElementById('next-run').innerText = data.next_run_at || 'N/A';
+}
+
+// initialize
+updateStatus();
+updateManualTickerVisibility();
+
+// Poller to refresh results when auto-run is enabled
+let _pollTimer = null;
+async function pollLastResults(){
+  try{
+    const res = await fetch('/api/tools/scraper/status');
+    const st = await res.json();
+    document.getElementById('next-run').innerText = st.next_run_at || 'N/A';
+    if(st.auto_run_enabled){
+      // fetch last results
+      const r = await fetch('/api/tools/scraper/last');
+      const payload = await r.json();
+      const results = payload.results || [];
+      if(results.length === 0){
+        document.getElementById('results-area').innerHTML = '<p class="text-muted">No recent videos or symbols found.</p>';
+      } else {
+        // build table similar to runScraper
+        let html = '<div class="table-responsive"><table class="table table-striped"><thead><tr>';
+        const keys = Object.keys(results[0]);
+        for(const k of keys) html += `<th>${k}</th>`;
+        html += '</tr></thead><tbody>';
+        for(const r1 of results){
+          html += '<tr>';
+          for(const k of keys){
+            html += `<td>${r1[k] ?? ''}</td>`;
+          }
+          html += '</tr>';
+        }
+        html += '</tbody></table></div>';
+        document.getElementById('results-area').innerHTML = html;
+        const a = document.getElementById('download-csv');
+        a.href = '/api/tools/scraper/csv';
+        a.style.display = 'inline-block';
+      }
+    }
+  }catch(err){
+    console.warn('poll error', err);
+  }
+}
+
+function startPolling(){
+  if(_pollTimer) return;
+  pollLastResults();
+  _pollTimer = setInterval(pollLastResults, 15000); // every 15s
+}
+
+function stopPolling(){
+  if(_pollTimer){
+    clearInterval(_pollTimer);
+    _pollTimer = null;
+  }
+}
+
+// Watch the auto-switch and start/stop polling accordingly
+document.getElementById('auto-switch').addEventListener('change', function(e){
+  if(e.target.checked) startPolling(); else stopPolling();
+});
+
+// Start polling if already enabled on load
+setTimeout(async ()=>{ const res = await fetch('/api/tools/scraper/status'); const st = await res.json(); if(st.auto_run_enabled) startPolling(); }, 1000);
+
+// Manual Ticker Lookup Handler
+async function tickerLookup(){
+  const ticker = document.getElementById('manual-ticker-input').value.trim();
+  const youtubeUrl = document.getElementById('youtube-url-input').value.trim();
+  
+  if(!ticker && !youtubeUrl){
+    document.getElementById('ticker-result-content').innerHTML = '<div class="alert alert-warning">Please enter either a ticker symbol or a YouTube URL.</div>';
+    document.getElementById('ticker-results-area').style.display = 'block';
+    return;
+  }
+
+  // Show loading state
+  document.getElementById('ticker-loading').style.display = 'inline';
+  document.getElementById('ticker-lookup-btn').disabled = true;
+  
+  try {
+    // Build query parameters
+    const params = new URLSearchParams();
+    if(ticker) params.append('ticker', ticker);
+    if(youtubeUrl) params.append('youtube_url', youtubeUrl);
+
+    const res = await fetch('/api/tools/ticker-lookup?' + params.toString(), {
+      method: 'POST'
+    });
+    
+    const data = await res.json();
+    document.getElementById('ticker-loading').style.display = 'none';
+    document.getElementById('ticker-lookup-btn').disabled = false;
+
+    if(!res.ok || data.error){
+      document.getElementById('ticker-result-content').innerHTML = 
+        '<div class="alert alert-danger"><strong>Error:</strong> ' + (data.error || 'Failed to lookup tickers') + '</div>';
+      document.getElementById('ticker-results-area').style.display = 'block';
+    } else {
+      const results = data.results || [];
+      const errors = data.errors || [];
+      
+      if(results.length === 0) {
+        document.getElementById('ticker-result-content').innerHTML = 
+          '<div class="alert alert-warning">No results found for the provided tickers.</div>';
+      } else {
+        // Build table with results
+        let html = '<div class="table-responsive"><table class="table table-striped table-hover">';
+        html += '<thead class="table-dark"><tr>';
+        html += '<th>Ticker</th><th>Company</th><th>Halal Status</th><th>Trend</th><th>Current Price</th><th>Change %</th>';
+        html += '</tr></thead><tbody>';
+        
+        for(const r of results) {
+          const halalBadge = r.halal_status === 'Yes' ? '<span class="badge bg-success">Yes</span>' : 
+                             r.halal_status === 'No' ? '<span class="badge bg-danger">No</span>' : 
+                             '<span class="badge bg-secondary">Unknown</span>';
+          const trendBadge = r.trend === 'Uptrend' ? '<span class="badge bg-success">Uptrend</span>' :
+                            r.trend === 'Downtrend' ? '<span class="badge bg-danger">Downtrend</span>' :
+                            '<span class="badge bg-warning">Sideways</span>';
+          const changeClass = parseFloat(r.change_percent) >= 0 ? 'text-success' : 'text-danger';
+          
+          html += '<tr>';
+          html += `<td><strong>${r.ticker}</strong></td>`;
+          html += `<td>${r.company_name}</td>`;
+          html += `<td>${halalBadge}</td>`;
+          html += `<td>${trendBadge}</td>`;
+          html += `<td>$${r.current_price}</td>`;
+          html += `<td class="${changeClass}">${r.change_percent}%</td>`;
+          html += '</tr>';
+        }
+        
+        html += '</tbody></table></div>';
+        
+        if(errors.length > 0) {
+          html += '<div class="alert alert-warning mt-3"><strong>Errors:</strong><ul>';
+          for(const e of errors) {
+            html += `<li>${e.ticker}: ${e.error}</li>`;
+          }
+          html += '</ul></div>';
+        }
+        
+        document.getElementById('ticker-result-content').innerHTML = html;
+        
+        // Setup CSV download with current tickers
+        const csvBtn = document.getElementById('manual-ticker-csv-download');
+        csvBtn.href = '/api/tools/manual-ticker/csv?tickers=' + encodeURIComponent(ticker || youtubeUrl);
+        csvBtn.style.display = 'inline-block';
+      }
+      document.getElementById('ticker-results-area').style.display = 'block';
+    }
+  } catch(err) {
+    document.getElementById('ticker-loading').style.display = 'none';
+    document.getElementById('ticker-lookup-btn').disabled = false;
+    document.getElementById('ticker-result-content').innerHTML = '<div class="alert alert-danger"><strong>Error:</strong> ' + err.message + '</div>';
+    document.getElementById('ticker-results-area').style.display = 'block';
+  }
+}
+
+// Toggle manual ticker section visibility based on auto-run status
+function updateManualTickerVisibility(){
+  const autoEnabled = document.getElementById('auto-switch').checked;
+  const manualCard = document.getElementById('manual-ticker-card');
+  if(autoEnabled) {
+    manualCard.style.display = 'none';
+  } else {
+    manualCard.style.display = 'block';
+  }
+}
+
+// Add click listener to ticker lookup button
+document.getElementById('ticker-lookup-btn').addEventListener('click', tickerLookup);
+
+// Allow Enter key to trigger lookup from input fields
+document.getElementById('manual-ticker-input').addEventListener('keypress', function(e){
+  if(e.key === 'Enter') tickerLookup();
+});
+
+document.getElementById('youtube-url-input').addEventListener('keypress', function(e){
+  if(e.key === 'Enter') tickerLookup();
+});
+
+</script>
+
+{% endblock %}
