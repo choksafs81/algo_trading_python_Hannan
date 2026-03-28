@@ -49,6 +49,12 @@ class TradingService:
             # Place order through IBKR
             ib_order_id = await self.ibkr_service.place_order(order)
 
+            # If initial attempt failed due connection or client-id issues, try reconnect and retry once
+            if ib_order_id is None:
+                logger.warning("Initial IB order placement failed; retrying after reconnect")
+                await self.ibkr_service.connect()
+                ib_order_id = await self.ibkr_service.place_order(order)
+
             if ib_order_id:
                 order.status = OrderStatus.SUBMITTED
                 # attach the IB numeric id to our order model

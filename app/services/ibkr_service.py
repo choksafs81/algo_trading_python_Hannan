@@ -54,10 +54,19 @@ class IBKRService(EWrapper):
             with self._connect_lock:
                 # If already connected, no-op
                 try:
-                    if self.client and self.client.isConnected():
+                    if self.client and self.client.isConnected() and self.connected:
                         logger.info("IB client already connected")
-                        self.connected = True
                         return True
+                except Exception:
+                    pass
+
+                # If we have a connection object but not marked as connected, inspect state
+                try:
+                    if self.client and self.client.isConnected():
+                        if self.next_order_id is not None:
+                            self.connected = True
+                            logger.info("IB client was already connected with next order id")
+                            return True
                 except Exception:
                     pass
 
@@ -112,6 +121,17 @@ class IBKRService(EWrapper):
                         self.connected = True
                         logger.info("Successfully connected to IBKR TWS")
                         return True
+
+                    # If we are connected but do not yet have next_order_id, wait briefly
+                    if self.client.isConnected() and self.next_order_id is None:
+                        wait_extra = 5
+                        logger.info(f"Connected but waiting additional {wait_extra}s for next order id")
+                        for _ in range(int(wait_extra*2)):
+                            await asyncio.sleep(0.5)
+                            if self.next_order_id is not None:
+                                self.connected = True
+                                logger.info("Successfully connected to IBKR TWS (delayed next order id)")
+                                return True
 
                     # If an immediate error happened and it looks like client-id-in-use,
                     # try the next candidate id; otherwise break and fail
@@ -232,9 +252,15 @@ class IBKRService(EWrapper):
     async def place_order(self, order: Order) -> bool:
         """Place order through IBKR"""
         try:
-            if not self.connected:
+            if not self.connected or not (self.client and self.client.isConnected()):
+                logger.info("IBKR not connected: attempting to connect before placing order")
                 await self.connect()
-                
+
+            if not self.connected or not (self.client and self.client.isConnected()):
+                logger.error("IBKR client is not connected after connect attempt")
+                self.last_error = "IBKR client not connected"
+                return None
+
             if not IBAPI_AVAILABLE or not self.client:
                 logger.error("IBAPI not available. Cannot place real orders.")
                 return False
