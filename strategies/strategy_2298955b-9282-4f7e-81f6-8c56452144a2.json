@@ -1,0 +1,22 @@
+{
+  "id": "2298955b-9282-4f7e-81f6-8c56452144a2",
+  "name": "Multi-Symbol MACD",
+  "description": "MACD Strategy for MSFT, GOOGL - Fast: 12, Slow: 26, Signal: 9",
+  "parameters": {
+    "strategy_type": "MACD",
+    "fast_period": 12,
+    "slow_period": 26,
+    "signal_period": 9,
+    "min_bars": 50
+  },
+  "symbols": [
+    "MSFT",
+    "GOOGL"
+  ],
+  "status": "STOPPED",
+  "enabled": true,
+  "created_at": "2025-10-04T11:13:08.209854",
+  "updated_at": "2025-10-07T20:31:54.022881",
+  "started_at": "2025-10-04T14:22:48.962683",
+  "stopped_at": "2025-10-07T20:31:54.022868"
+}

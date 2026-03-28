@@ -1,0 +1,35 @@
+[
+  {
+    "id": "macd_MSFT_1759587769",
+    "strategy_id": "2298955b-9282-4f7e-81f6-8c56452144a2",
+    "symbol": "MSFT",
+    "action": "SELL",
+    "quantity": 100,
+    "price": 516.62,
+    "reason": "MACD momentum: -0.0507 < -0.0451, histogram negative",
+    "timestamp": "2025-10-04T14:22:49.469621",
+    "order_id": null
+  },
+  {
+    "id": "macd_GOOGL_1759587770",
+    "strategy_id": "2298955b-9282-4f7e-81f6-8c56452144a2",
+    "symbol": "GOOGL",
+    "action": "SELL",
+    "quantity": 100,
+    "price": 245.3,
+    "reason": "MACD momentum: -0.0165 < -0.0165, histogram negative",
+    "timestamp": "2025-10-04T14:22:50.025367",
+    "order_id": null
+  },
+  {
+    "id": "macd_CIGL_1760203481",
+    "strategy_id": "150bd228-439e-435d-b1da-e3b38e0a7add",
+    "symbol": "CIGL",
+    "action": "BUY",
+    "quantity": 100,
+    "price": 2.95,
+    "reason": "MACD momentum: 0.0166 > 0.0143, histogram positive",
+    "timestamp": "2025-10-11T17:24:41.371990",
+    "order_id": null
+  }
+]

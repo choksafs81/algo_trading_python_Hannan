@@ -1,0 +1,21 @@
+{
+  "id": "ab231479-9fed-4e01-ae5a-416ee2b9fa22",
+  "name": "IONQ MACD",
+  "description": "",
+  "parameters": {
+    "strategy_type": "MACD",
+    "fast_period": 12,
+    "slow_period": 26,
+    "signal_period": 9,
+    "min_bars": 50
+  },
+  "symbols": [
+    "IONQ"
+  ],
+  "status": "RUNNING",
+  "enabled": true,
+  "created_at": "2025-12-15T18:25:32.139953",
+  "updated_at": "2025-12-15T18:25:35.318405",
+  "started_at": "2025-12-15T18:25:35.318394",
+  "stopped_at": null
+}
